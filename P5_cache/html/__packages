@@ -1,0 +1,12 @@
+base
+ggplot2
+dplyr
+gridExtra
+reshape2
+docstring
+rpart
+rpart.plot
+rattle
+nortest
+GGally
+e1071

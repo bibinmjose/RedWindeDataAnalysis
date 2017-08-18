@@ -1,0 +1,754 @@
+---
+title: "Exploratory Data Analysis on Red Wine"
+author: "by Bibin Jose"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    highlight: tango
+    number_sections: no
+    theme: united
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	cache = TRUE
+)
+```
+
+```{r echo=FALSE, message=FALSE}
+red <- read.csv("wineQualityReds.csv")
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(reshape2)
+library(docstring)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+```
+***
+
+# Introduction
+
+This tidy data set contains 1,599 red wines with 11 variables on the chemical properties of the wine. At least 3 wine experts rated the quality of each wine, providing a rating between 0 (very bad) and 10 (very excellent). The dataset is related to red variant of the Portuguese wine ["Vinho Verde"](http://www.vinhoverde.pt/en/). 
+
+* Guiding Question: Which chemical properties influence the quality of red wines?
+
+## Data - Column names, description and units
+* Number of Attributes: 11 + output attribute
+* Input variables (based on physicochemical tests):
+    1. fixed acidity (tartaric acid - g/dm^3^)
+        - most acids involved with wine or fixed or nonvolatile (do not evaporate readily)
+    2. volatile acidity (acetic acid - g/dm^3^)
+        - the amount of acetic acid in wine, which at too high of levels can lead to an unpleasant, vinegar taste
+    3. citric acid (g/dm^3^)
+        - found in small quantities, citric acid can add 'freshness' and flavor to wines
+    4. residual sugar (g/dm^3^)
+        - the amount of sugar remaining after fermentation stops, it's rare to find wines with less than 1 gram/liter and wines with greater than 45 grams/liter are considered sweet
+    5. chlorides (sodium chloride - g/dm^3^)
+        - the amount of salt in the wine
+    6. free sulfur dioxide (mg/dm^3^)
+        - the free form of SO2 exists in equilibrium between molecular SO2 (as a dissolved gas) and bisulfite ion; it prevents microbial growth and the oxidation of wine
+    7. total sulfur dioxide (mg/dm^3^)
+        - amount of free and bound forms of S02; in low concentrations, SO2 is mostly undetectable in wine, but at free SO2 concentrations over 50 ppm, SO2 becomes evident in the nose and taste of wine
+    8. density (g/cm^3^)
+        - the density of water is close to that of water depending on the percent alcohol and sugar content
+    9. pH
+        - describes how acidic or basic a wine is on a scale from 0 (very acidic) to 14 (very basic); most wines are between 3-4 on the pH scale
+    10. sulphates (potassium sulphate - g/dm^3^)
+        - a wine additive which can contribute to sulfur dioxide gas (S02) levels, wich acts as an antimicrobial and antioxidant
+    11. alcohol (% by volume)
+        - the percent alcohol content of the wine
+* Output variable (based on sensory data): 
+    12. quality (score between 0 and 10)
+
+## Data - Structure
+```{r structure}
+red$X <- NULL
+str(red)
+```
+
+```{r summary}
+for (p in names(red)){
+  print(paste(p,"->",sum(is.na(red[p]))))
+}
+```
+
+* No NA values were present in the dataset.
+
+***
+# Single Variable Analysis
+
+Each variable in the dataset is explored individually by plotting histograms to visualize the distribution of the data.
+
+## density, fixed & volatile  acidity, alchol and quality
+
+```{r}
+uni_plot <- function(X_,n){
+  #' @description Creates a histogram with specific number of bins
+  #' @param X_ input variable for histogram. Has to be passed as a string.
+  #' @param n number of bins type: numeric.
+  
+  return(
+    ggplot(data=red,aes_string(x=X_))+
+      geom_histogram(bins= n)
+  )
+}
+```
+
+
+```{r acidity, echo=FALSE}
+p1=uni_plot("pH",40)
+p2=uni_plot("density",50)
+p3=uni_plot("fixed.acidity",50)
+p4=uni_plot("volatile.acidity",50)
+p5=uni_plot("alcohol",50)
+grid.arrange(p1,p2,p3,p4,p5, ncol=2)
+summary(subset(red, select = c(pH,density,fixed.acidity,volatile.acidity,alcohol,quality)))
+
+```
+
+```{r normality_test, include=FALSE}
+
+library(nortest)
+ad_test<-function(x){
+  #' @description Defining a function to run the A-D tests and return p-values
+  #' @param x input data for the test
+  test<- shapiro.test(x); #store the p-values for each column in a separate variable
+  return(test$p.value)
+  }
+
+pvalues<-lapply(red,ad_test)
+print(pvalues)
+ad.test(red$fixed.acidity)
+```
+
+
+```{r uniplot_quality}
+uni_plot("quality",6)
+summary(subset(red, select = quality))
+```
+
+
+* Most of the wines in the dataset have a quality 5 or 6.
+
+## citric acid, residual sugar, chlorides, sulphates, free and total sulfur dioxide
+
+
+```{r sulphates, echo=FALSE}
+p1=uni_plot("citric.acid",40)
+p2=uni_plot("residual.sugar",50)
+p3=uni_plot("chlorides",50)
+p4=uni_plot("sulphates",50)
+p5=uni_plot("free.sulfur.dioxide",50)
+p6=uni_plot("total.sulfur.dioxide",40)
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol=2)
+summary(subset(red, select = c(citric.acid,residual.sugar,chlorides, 
+                               sulphates,free.sulfur.dioxide, total.sulfur.dioxide)))
+```
+
+* Each column in the dataset is checked for NA values and none was found. No operations were performed on the dataset to clean or tidy data.
+* Cirtic.acid and free.sulfur.dioxide are skewed towards right.
+
+## Histograms with log
+```{r log_histograms, echo=FALSE}
+p1=uni_plot("fixed.acidity",50)+
+  scale_x_log10(breaks=round(10^seq(.4,1.2,0.2)))
+p2=uni_plot("volatile.acidity",50)+
+  scale_x_log10(breaks=round(10^seq(-0.5,1,0.25),1))
+p3=uni_plot("residual.sugar",50)+
+  scale_x_log10(breaks=round(10^seq(-0.5,1.5,0.25),0))
+p4=uni_plot("chlorides",50)+
+  scale_x_log10(breaks=round(10^seq(-2.1,1.2,0.4),2))
+p5=uni_plot("sulphates",50)+
+  scale_x_log10(breaks=round(10^seq(-1,1.2,0.2),1))
+p6=uni_plot("total.sulfur.dioxide",40)+
+  scale_x_log10(breaks=c(5,10,50,100,150,300))
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol=2)
+```
+
+
+Most of the variables are  normally distributed except quality, which shows 6 levels.
+These variables mentioned below are transformed to log scale for a normally distributed dataset:
+
+  * fixed acidity: Most data points between 6 - 10
+  * volatile acidity: Most data between 0.3 - 1.0
+  * residual sugar: Most data between 1 - 3
+  * chlorides: Most data in the range 0.05 - 0.13
+  * sulphates: Less data in the range 1-1.7
+  * total sulfur oxide: There are very few data in the range 150-300
+
+***
+# Two Variable Analysis
+## Correlation Matrix
+
+```{r corr_matrix, echo=FALSE, fig.height=6, fig.width=9, message=F, warning=F, results='hide'}
+library(GGally)
+tempdata=subset(red)
+ggcorr(tempdata, nbreaks = 4, label=TRUE,size = 3, color = "grey50")
+```
+
+
+These sets of variables seems to have more than meaningful correlation  (>0.5)
+
+ <span style="color:red"> **Meaningful Correlations**</span>
+    
+1.  fixed.acidity vs. citric.acid (0.672)
+2.  fixed.acidity vs. density (-0.688)
+3.  fixed.acidity vs. pH  (-0.683)
+4.  citic acid vs pH  (-0.542)
+5.  volatile.acidity vs. citric acid (-0.552)
+6. free sulfur dioxide vs total sulfur dioxide (0.667)
+
+  The strongest correlation is found to be between **pH-fixed.acidity** (-0.683) followed by **fixed acidity-density** (0.668) and **citric acid-fixed acidity** (0.672). Since pH is a measure of acidity these correlations are expected.
+
+## Quality vs. others
+
+```{r quality_boxplot, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+create_boxplt <- function(X_,Y_, grp){
+  #' @description Creates a bivariate plot with grouped boxplots on top.  X_,Y_ and grp has to be passed as strings.
+  #' @param X_ x variable for plot.
+  #' @param Y_ y variable for plot.
+  #' @param grp used to group x variable and boxplots
+  
+  return (
+    ggplot(data=red,aes_string(x=X_,y=Y_))+
+      geom_point(alpha=1/8, position=position_jitter(width =0.15))+
+      geom_boxplot(aes_string(group=grp), alpha=0, color="blue", breaks = factor(3:8))+
+      scale_x_continuous(breaks=c(3,4,5,6,7,8)))
+}
+```
+
+### Quality vs. Alcohol
+
+```{r alcohol_quality, echo=FALSE, message=FALSE, warning=FALSE}
+create_boxplt("quality","alcohol", "quality")+
+  geom_smooth(method = "lm", color="red")
+```
+
+* Median values for alcohol also showed an upward trend but with a dip for intermediate quality (quality = 5).
+
+### Quality vs. Volatile Acidity
+
+```{r volatile.acidity_quality, echo=FALSE, message=FALSE, warning=FALSE}
+create_boxplt("quality","volatile.acidity","quality")+
+  geom_smooth(method = "lm", color="red")
+```
+
+* Median values ofvolatile acidity showed a decreasing trend with quality.
+* Since volatile acidity is the measure of acetic acid in wine, which at higher level increases unpleasant vinegar like taste, it can be infered that volatile acidity generally decreases quality.
+* Low quality wines which are not rigourously monitored generally contains more acetic acid, hence higher volatility.
+
+### Quality vs. Sulphates
+
+```{r sulphates_quality, echo=FALSE, message=FALSE, warning=FALSE}
+create_boxplt("quality","sulphates","quality")+
+  geom_smooth(method = "lm", color="red")+
+  ylim(0.3,1.0)
+```
+
+* Median values of citric acid and sulphates showed an increasing trend with quality.
+
+## pH vs. others 
+
+```{r bi_plot, echo=FALSE}
+bi_plot <- function(X_, Y_){
+  #' @description Creates a bivariate plot.  X_ and Y_ has to be passed as strings.
+  #' @param X_ x variable for plot.
+  #' @param Y_ y variable for plot.
+  
+  return(ggplot(data=red,aes_string(x=X_, y=Y_))+
+           geom_point(alpha=1/8))
+}
+```
+
+### pH vs. Fixed Acidity
+```{r fixed.acidity_pH, echo=FALSE}
+bi_plot("pH","fixed.acidity")+
+  geom_smooth(method = "lm")
+```
+
+* Since pH and fixed acidity are both measure of acidity, there is a meaningful correlation between both. pH decreases with increasing fixed acidity.
+
+```{r, echo=FALSE}
+with(red , cor.test(fixed.acidity, pH, method="pearson"))
+```
+
+### pH vs. Citric Acid
+```{r citric.acid_pH, echo=FALSE}
+bi_plot("pH","citric.acid")+
+  geom_smooth(method = "lm")
+```
+
+* Since citric acid is an acid, it is increases acidity which inturn decrease with pH. Citric acid is therefor expected to follow a trend simillar to that of fixed acidity.
+
+```{r, echo=FALSE}
+with(red , cor.test(citric.acid, pH, method="pearson"))
+```
+
+## Residual Sugar vs. Chlorides
+
+```{r residual.sugar_chlorides, echo=FALSE}
+bi_plot("residual.sugar","chlorides")+
+  geom_smooth(method = "lm")
+
+ggplot(data=subset(red,chlorides < 0.5 & residual.sugar < 5),aes(x=residual.sugar,y=chlorides))+
+  geom_point(alpha=.25)+
+  geom_smooth(method = "lm")
+```
+
+```{r}
+with(subset(red,chlorides < 0.15 & residual.sugar < 5), cor.test(residual.sugar,chlorides, method="pearson"))
+```
+
+
+* Rresidual sugar seems to vary independent of chlorides even after removing the outliers.
+
+
+## Alcohol vs. Density
+
+
+```{r alcohol_density, echo=FALSE}
+bi_plot("alcohol","density")+
+  geom_smooth(method = "lm")
+```
+
+```{r, echo=FALSE}
+with(red , cor.test(density, alcohol, method="pearson"))
+```
+
+* Density decreases with alcohol
+* Reason for this correlation : Alcohol is lighter than water, hence density decreases with increased alcohol presence.
+
+## Sulphates vs. Chlorides
+
+
+```{r sulphates_chlorides1, echo=FALSE} 
+ggplot(data=subset(red,chlorides<quantile(chlorides,0.95)),aes(x=sulphates, y=chlorides))+
+  geom_point(alpha=.5)+
+  geom_smooth(method = "lm")
+```
+
+* Sulphates have the highest correlation with chlorides, but not not high enough for any meaningful trend.
+* 95% of the data points for chlorides are in the range : chlorides < 0.125 and seems to vary independent of sulphates.
+
+## Density vs. others 
+### Density vs. Fixed Acidity
+
+
+```{r density_fixed.acidity, echo=FALSE}
+bi_plot("density","fixed.acidity")+
+  geom_smooth(method = "lm")
+```
+
+
+```{r, echo=FALSE}
+with(red , cor.test(density, fixed.acidity, method="pearson"))
+```
+
+* Density is highly correlated with fixed acidity and increases with fixed acidity.
+* [Citric acid](https://en.wikipedia.org/wiki/Citric_acid) has a density of 1.66 gm/cm^3^ . Since citric acid is mostly the cause of fixed acidity, it is plausible that density increases with citric acid content.
+
+### Density vs. Citric Acid
+
+
+```{r density_citric.acid, echo=FALSE}
+bi_plot("density","citric.acid")+
+  geom_smooth(method = "lm")
+```
+
+* The correlation between citric acid and density is not strong enough.
+
+### Density vs. Residual Sugar
+
+```{r density_residual.sugar, echo=FALSE}
+bi_plot("density","residual.sugar")+
+  geom_smooth(method = "lm")
+ggplot(data=subset(red,residual.sugar < quantile(residual.sugar,0.9)),aes(x=density, y=residual.sugar))+
+  geom_point(alpha=.25)+
+  geom_smooth(method = "lm")+
+  ylim(0,5)
+```
+
+```{r, echo=FALSE}
+with(subset(red,residual.sugar<quantile(residual.sugar,0.9)) , cor.test(density, fixed.acidity, method="pearson"))
+```
+
+
+* After removing the upper 90% of the residual sugar data (outliers), density seems to have an upward trend with residual sugar with a correlation factor = 0.67. It is plausible as increasing sugar content increases density as mentioned in the description of density.
+
+```{r, echo=FALSE}
+bi_plot("density","chlorides")+
+  geom_smooth(method = "lm")
+ggplot(data=subset(red,chlorides < quantile(chlorides,0.9)),aes(x=density, y=chlorides))+
+  geom_point(alpha=.25)+
+  geom_smooth(method = "lm")+
+  ylim(0,0.15)
+```
+
+
+* After removing the upper 90% of the chlorides data (outliers), density seems to have an upward trend with chlorides with a correlation factor = 0.67.
+
+```{r, echo=FALSE}
+with(subset(red,chlorides < quantile(chlorides,0.9)) , cor.test(density, fixed.acidity, method="pearson"))
+```
+
+
+## Total Sulfur dioxide vs. all other variables
+### Total Sulfur dioxide vs. Free Sulfur dioxide
+
+```{r total.sulfur.dioxide_free.sulfur.dioxide, message=FALSE, warning=FALSE, echo=FALSE}
+bi_plot("total.sulfur.dioxide", "free.sulfur.dioxide")+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_smooth(method="lm")
+with(red , cor.test(free.sulfur.dioxide, total.sulfur.dioxide, method="pearson"))
+
+```
+
+
+* Free sulfur dioxide and Total sulfur dioxide seems to be highly correlated since free sulfur dioxide is a part of the total sulfur dioxide
+
+```{r, echo=FALSE}
+bi_plot("free.sulfur.dioxide", "total.sulfur.dioxide-free.sulfur.dioxide")+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_smooth(method="lm")
+with(red , cor.test(free.sulfur.dioxide, total.sulfur.dioxide-free.sulfur.dioxide, method="pearson"))
+```
+
+* The difference in total and free sulfur dioxide is less correlated aganist each other.
+
+## Citric Acid vs. others
+### Citric Acid vs. Volatile Acidity
+```{r citric.acid_volatile.acidity, echo=FALSE}
+bi_plot("citric.acid", "volatile.acidity")+
+  geom_smooth(method = "lm")
+```
+
+* Volatile acidity is found to be decreasing with citric acid.
+
+###  Volatile Acidity vs. Fixed Acidity
+```{r fixed.acidity_volatile.acidity, echo=FALSE}
+bi_plot("fixed.acidity", "volatile.acidity")+
+  geom_smooth(method = "lm")
+with(red , cor.test(fixed.acidity, volatile.acidity, method="pearson"))
+```
+
+* Fixed acidity does not seem to be highly correlated with volatile acidity. This seems to agree with prior observations. Since fixed acidity is highly correlated with citric acid and pH, it can be deduced that volatile acidity(acetic acid) does not significantly affect pH or fixed acidity of wine.
+
+### Citric Acid vs. Fixed Acidity
+```{r citric.acid_fixed.acidity, echo=FALSE}
+bi_plot("citric.acid", "fixed.acidity")+
+  geom_smooth(method = "lm")
+```
+
+
+* It is suprising to find that fixed acidity (a measure of tartaric acid), is correlated with citric acid.
+
+
+## Density distribution
+### Alcohol
+
+```{r densityplt_alcohol, echo=FALSE}
+ggplot(data=red,aes(x=alcohol,color=factor(quality)))+
+  geom_density(alpha=0.6, size=2)+
+  scale_color_brewer(type = 'seq') +
+  theme_dark()+
+  labs(color="Quality")
+library(e1071)
+temp_alcohol <- red %>% group_by(quality) %>% summarise(Skew=skewness(alcohol), Ku = kurtosis(alcohol))
+print(temp_alcohol)
+```
+
+* Distributuion of alcohol is more skewed towards right for low quality wines but more spread out with high quality wine.
+
+### Volatile Acidity
+
+```{r densityplt_volatile.acidity, echo=FALSE}
+ggplot(data=red,aes(x=volatile.acidity,color=factor(quality)))+
+  geom_density(alpha=0.6, size=2)+
+  scale_color_brewer(type = 'seq')+
+  theme_dark()+
+  labs(color="Quality")
+temp_volatile.acidity <- red %>% group_by(quality) %>% summarise(Skew=skewness(volatile.acidity), Ku = kurtosis(volatile.acidity))
+print(temp_volatile.acidity)
+```
+
+
+* Volatile acidity of high quality wines have narrow distribution compared to more broadly distributed low quality wines.
+* Mode of the volatile distribution is decreasing with quality and the distribution is getting narrower with increasing quality as well.
+
+### Citric Acid
+
+```{r densityplt_citric.acid, echo=FALSE}
+ggplot(data=red,aes(x=citric.acid,color=factor(quality)))+
+  geom_density(alpha=0.6, size=2)+
+  scale_color_brewer(type = 'seq')+
+  theme_dark()+
+  labs(color="Quality")
+temp_citric.acid <- red %>% group_by(quality) %>% summarise(Skew=skewness(citric.acid), Ku = kurtosis(citric.acid))
+print(temp_citric.acid)
+```
+
+* This plot shows that citric acid = 0 decreases with increasing quality. 
+
+```{r densityplt_citric.acid1, echo=FALSE}
+citric_0 <- red %>% filter(citric.acid!=0) %>% group_by(quality) %>% summarise(length(quality))
+all <- red %>% group_by(quality) %>% summarise(length(quality))
+ggplot(data=all,aes(x=quality))+
+  geom_bar(aes(y=citric_0$`length(quality)`/all$`length(quality)`), stat = "identity")+
+  ylab("Fraction of wines with citric acid > 0")+
+  guides(fill=FALSE,color=FALSE)
+```
+
+* Citric acid adds freshness to wine. Higher the quality of wine, more fraction of wines contain some amount of citric acid. This plot explains the freshness of high quality wines.
+
+
+### pH
+
+```{r densityplt_pH, echo=FALSE}
+ggplot(data=red,aes(x=pH,color=factor(quality)))+
+  geom_density(alpha=0.6, size=2)+
+  scale_color_brewer(type = 'seq') +
+  theme_dark()+
+  labs(color="Quality")
+temp_pH <- red %>% group_by(quality) %>% summarise(Skew=skewness(pH), Ku = kurtosis(pH))
+print(temp_pH)
+```
+
+* pH of wines seems to have a simillar distribution curve accross all wine qualities. This explains why pH might not be a good indicating factor of wine quality.
+
+***
+# Multi-Variable Analysis
+
+```{r multi_plot, echo=FALSE}
+  multi_plot <- function(X_,Y_){
+  #' @description Creates bivariate plots of X_ vs. Y_ with with faceting and color code by quality. X_ and Y_ has to be passed as a string.
+  #' @param X_ x variable for the plot.
+  #' @param Y_ y variable for the plot.
+  return(
+      ggplot(data=red,aes_string(x=X_, y=Y_))+
+        geom_point(aes(color=factor(quality)), alpha=1/2)+
+        geom_smooth(aes(color=factor(quality)), size=0.5, method="lm", se=FALSE)+
+        scale_color_brewer(type = 'seq', palette =3) +
+        geom_smooth(method="lm", se=FALSE, color="black")+
+        theme_dark()+
+        labs(color="Quality")
+    )
+      }
+```
+
+## quality vs.
+
+### quality, fixed.acidity vs. citric.acid
+
+```{r fixed.acidity_citric.acid_quality, echo=FALSE}
+multi_plot("citric.acid", "fixed.acidity")
+```
+
+* Fixed acidity increases with citric acid accross all quality wines. It can be infered that citic acid has a significant influence on fixed acidity accross different quality wines.
+
+### quality, fixed.acidity vs. density
+
+```{r fixed.acidity_density_quality, echo=FALSE}
+multi_plot("fixed.acidity", "density")
+```
+
+* Fixed acidity and density are positively correlated accross all quality wines. Shows tartaric acid plays a vital role in controlling the wine density.
+
+### quality, fixed.acidity vs. pH
+
+```{r fixed.acidity_pH_quality, echo=FALSE}
+multi_plot("citric.acid", "pH")
+```
+
+* In general fixed acidity decreases with pH accross all quality wines.
+
+
+### quality, citric.acid vs. pH
+
+```{r citric.acid_density_quality, echo=FALSE}
+multi_plot("citric.acid", "density")
+```
+
+* Density seems to increase with citric acid across all quality wines. This clearly indicates citric acid presence significantly contributes to the density of wine.
+
+### quality, citric.acid vs. volatile.acidity
+
+```{r cirtic.acid_volatile.acidity_quality, echo=FALSE}
+multi_plot("citric.acid", "volatile.acidity")
+```
+
+* Volatile acidity seems to decrease with citric acid irrespective of quality. The lowest quality wine 3 seems to show the sharpest decline.
+
+### quality, chlorides vs. density
+
+```{r density_chlorides_quality, echo=FALSE}
+multi_plot("density", "chlorides")
+```
+
+* Chlorides doesn't seem to be highly correlated with density. It also shows varying trend across different quality wines.
+
+### quality, chlorides vs. alcohol
+
+```{r chlorides_alcohol_quality, echo=FALSE}
+multi_plot("alcohol","chlorides")
+```
+
+* Variation of chlorides seems to be independent of alcohol content irrespective of the quality of wines.
+
+### quality,density vs. alcohol
+
+```{r alcohol_density_quality, echo=FALSE}
+multi_plot("alcohol","density")
+```
+
+* Desitiy seems to decrease with alcohol content accross all quality wines. This can be attributted to the lower density of alcohol compared to water.
+* Data points with density > 1.0 seems a bit suspicious and has to be rechecked.
+
+### quality, chlorides vs. total sulphur dioxide
+
+```{r chlorides_total.sulfur.dioxide_quality, echo=FALSE}
+multi_plot("total.sulfur.dioxide","chlorides")
+```
+
+* Chlorides vary independently of total sulphur dioxide across all the wine qualities and can be used as an independent parameter in the predictive model.
+
+
+* Most of the outliers in chlorides vs. density / alcohol / total sulphur dioxide plot seems to be from low and medium quality wines (5,6). This could be due to the higher sampling rate / availabilty of the medium quality wines as well as the incosistency of prepartion process. Higher quality wines go thrugh more stringent preparation protocol resulting in the consistency. Moreover, chlorides seems to be almost absent in high qulaity wines (7, 8).
+
+### quality, residual sugar vs. free sulphur dioxide
+
+```{r residualsugar_free.sulfur.dioxide_quality, echo=FALSE}
+multi_plot("free.sulfur.dioxide","residual.sugar")
+```
+
+* Residual sugar doesn't seem to be correlated with free sulfur dioxide for any given quality.
+
+
+****
+## Predictive Model
+## Multicolinearity
+
+* Since the variables citric acid, fixed acidity and pH are highly correlated with each other, fixed acidity alone can be used in the predictive model to reduce redundancy. 
+* Simillarly, free sulphur dioxide can be dropped as well since it is highly correlated with total sulphur dioxide.
+* Another correlation is between alcohol and density. DEnsity can be avoided while making a predictive model.
+
+## Tree based model
+
+```{r, fig.width=10}
+model <- rpart(quality ~ fixed.acidity+volatile.acidity+residual.sugar+chlorides+
+        total.sulfur.dioxide+sulphates+alcohol, 
+        data=red, 
+        method="class",
+        control=rpart.control(cp=0.001))
+pruned_model <- prune(model, cp = 0.01)
+rpart.plot(pruned_model, main="Pruned Classification Tree for Red Wine Quality")
+```
+
+Although the predictive model includes the outcome for all quality 1-10, we have only shown a prunned version due to space constraints. The model clearly shows the significance of alcohol content in the initial partitioning of the tree diagram.  
+
+***
+# Final Plots and Summary
+
+## Plot One
+
+```{r final_plot_1, echo=FALSE}
+create_boxplt("quality","alcohol", "quality")+
+  geom_smooth(method = "lm", color="red")+
+  xlab("Quality")+
+  ylab("Alcohol  (% by volume)")+
+  ggtitle("Alcohol Vs. Quality")+ 
+  theme(plot.title = element_text(hjust = 0.5))
+  
+```
+
+
+* Median values for alcohol also showed an upward trend but with a dip for intermediate quality (quality = 5).
+* We found a strong correlation between alcohol content and quality. Alcohol perhaps may be the most likely indicator of the quality of the wine followed by sulphates. The influence of alcohol content was visibly pronounced in the predictive model.
+
+***
+## Plot Two
+```{r final_plot_2, echo=FALSE}
+multi_plot("pH","fixed.acidity")+
+  xlab("pH")+
+  ylab(expression("Fixed Acidity (tartaric acid - " ~ g/dm^{3}~")")) +
+  ggtitle("Fixed Acidity Vs. pH") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+* The negative correlation of fixed acidity with pH is due to the scale with which pH is defined.
+
+* Fixed acidity is has strong negative correlation with pH which expected since pH is a measure of acidity. But more intriguiging factor is the extent to which fixed acidity (tartaric acid) influences pH when other acids are also present in wine. One of the probably reasons for this high correlation is because fixed acidity is also a measure of non volatile acidic content.
+
+***
+## Plot Three
+```{r final_plot_3, echo=FALSE}
+ggplot(data=red,aes(x=volatile.acidity,color=factor(quality)))+
+  geom_density(alpha=0.6, size=2)+
+  scale_color_brewer(type = 'seq')+
+  theme_dark()+
+  labs(color="Quality")+
+  xlab(expression("Volatile Acidity (acetic acid - " ~ g/dm^{3}~")"))+
+  ylab("Count (density)")+
+  ggtitle("Density distribution of Volatile Acidity")+ 
+  theme(plot.title = element_text(hjust = 0.5))
+print(temp_citric.acid)
+```
+
+
+* Volatile acidity of high quality wines have narrow distribution compared to more broadly distributed low quality wines.
+* Mode of the volatile distribution is decreasing with quality and the distribution is getting narrower with increasing quality as well.
+* Higher quality wines go thrugh more stringent preparation protocol resulting in the consistency and hence the narrow distribution of the volatile acidity(acetic acid), a major factor controlling the quality.
+
+## Reflections
+
+The redwine dataset containes 1599 observations by 12 variables. I started digging the dataset by looking at the distribution of individual variables and then by probing the relation through 2 variable plots and multivariable plots.
+
+### Struggles and successes
+
+The relationships between most of the variables are not apparent until it is filtered based on another independent variable. It was also not obvious to me that quality was an output variable based on other continuous variables  in the dataset.
+
+The lack of 'NA' values in the dataset made it much easier to hadle data without using many filters.
+
+There are multiple variables which are related among each other and showed multicolinearity. these variables ahave to dropped while building a predictive model to reduce the redendancy.
+
+Another struggle was to visualize the huge data set based on three variables other than the variable quality.
+
+### Future work
+A visualization based on three continuous variables could identify interestings trends. Another idea would be to cut off the data in both tails of the distribution and look at the correlation between variables in the middle values. 
+
+
+******
+
+# References
+
+1. http://ggplot2.tidyverse.org/
+2. http://ggplot2.org/
+3. http://rmarkdown.rstudio.com/
+4. https://briatte.github.io/ggcorr/
+5. https://onlinecourses.science.psu.edu/stat501/node/343
+6. https://stat.ethz.ch/R-manual/R-devel/library/stats/html/lm.html
+7. https://s3.amazonaws.com/udacity-hosted-downloads/ud651/wineQualityInfo.txt
+8. https://stat.ethz.ch/R-manual/R-devel/library/stats/html/lm.html
+9. http://ggplot2.tidyverse.org/reference/geom_density.html
+10. https://stats.stackexchange.com/questions/18844/when-and-why-should-you-take-the-log-of-a-distribution-of-numbers
+11. http://stackoverflow.com/questions/15736370/special-characters-and-superscripts-on-plot-axis-titles
+11. https://onlinecourses.science.psu.edu/stat501/node/343
+12. http://www.statmethods.net/advstats/cart.html
+13. http://www.milbo.org/rpart-plot/prp.pdf
+14. http://blog.revolutionanalytics.com/2013/06/plotting-classification-and-regression-trees-with-plotrpart.html
+
+
+******
+
+
+
